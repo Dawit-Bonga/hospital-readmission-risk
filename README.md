@@ -1,66 +1,90 @@
 # Hospital Readmission Risk Prediction
 
-An end-to-end machine learning project focused on predicting 30-day hospital readmission risk using real-world clinical data, with an emphasis on recall-driven evaluation and model selection.
+An end-to-end machine learning project focused on predicting 30-day hospital readmission risk using real-world clinical data. This project tackles the challenges of **class imbalance (11% positive rate)** and **data leakage** in a healthcare setting.
+
+## 📊 Key Results (Final Test Set)
+
+After training and comparing Logistic Regression, Decision Trees, Random Forest, and XGBoost, the **Tuned Random Forest** was selected as the champion model.
+
+## 📊 Key Results (Final Test Set)
+
+After training and comparing Logistic Regression, Decision Trees, Random Forest, and XGBoost, the **Tuned Random Forest** was selected as the champion model.
+
+| Metric        | Score     | Clinical Interpretation                                                                                                                                    |
+| :------------ | :-------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **ROC-AUC**   | **0.636** | The model successfully discriminates between high and low risk patients better than random chance.                                                         |
+| **PR-AUC**    | **0.188** | Average Precision score, accounting for class imbalance. Lower than ROC-AUC but expected given the 11% positive rate.                                      |
+| **Recall**    | **34%**   | At the default threshold, the model captures 34% of readmissions (Sensitivity). _Note: This can be increased to >60% by adjusting the decision threshold._ |
+| **Precision** | **22%**   | For every ~5 patients flagged as "High Risk," ~1 is actually readmitted.                                                                                   |
+| **F1-Score**  | **0.231** | Harmonic mean of precision and recall, balancing the tradeoff between the two metrics.                                                                     |
+
+**Note:** Model performance was validated via 5-fold cross-validation (CV AUC: 0.639 ± 0.016), confirming robust generalization. |
+
+### 💡 Clinical Insight: The "Frequent Flyer" Effect
+
+Feature Importance analysis revealed that **Historical Utilization** is the dominant driver of risk.
+
+- **Top Predictor:** `number_inpatient` (Inpatient visits in the previous year) - **34% Importance**.
+- **Takeaway:** A patient's history of hospital usage is a far stronger predictor of future readmission than their specific medication regimen (Insulin vs. Metformin) or number of diagnoses.
+
+---
 
 ## Problem
 
-Hospital readmissions within 30 days of discharge are costly and often preventable.
-The goal of this project is to predict whether a patient will be readmitted within 30 days using information available at discharge time, enabling earlier intervention for high-risk patients.
+Hospital readmissions within 30 days of discharge are costly (estimated \$41B+ annually in the US) and often preventable. The goal of this project is to predict readmission risk _at the time of discharge_ to enable targeted interventions.
 
 ## Dataset
 
-This project uses a public clinical dataset containing over 100,000 hospital encounters from 130 U.S. hospitals.
-The data includes demographic information, hospital utilization metrics, lab procedures, medications, and admission details.
+- **Source:** Diabetes 130-US Hospitals Dataset (1999-2008).
+- **Size:** ~100,000 patient records.
+- **Features:** Demographics, hospital utilization (prior visits), lab results, and medications.
+- **Target:** Binary indicator (1 = Readmitted within 30 days, 0 = Otherwise).
 
-The target variable is a binary indicator of whether a patient was readmitted within 30 days of discharge.
+## 🛠 Approach & Methodology
 
-Due to privacy constraints, diagnosis codes and discharge disposition fields were excluded to prevent data leakage.
+### 1. Data Engineering
 
-## Key Challenges
+- **Leakage Prevention:** Removed post-discharge features (e.g., `discharge_disposition_id` relating to hospice/death) to ensure the model only uses data available _at discharge_.
+- **Preprocessing Pipeline:** Used `ColumnTransformer` to apply:
+  - `OneHotEncoder` for categorical variables.
+  - `StandardScaler` for numerical variables.
+  - **Note:** Fit _only_ on the training split to maintain strict separation.
 
-- Strong class imbalance (~11% positive readmissions)
-- High cost of false negatives in a clinical setting
-- Potential data leakage from post-discharge information
-- Balancing recall and precision in model evaluation
+### 2. Modeling Strategy
 
-## Approach
+We compared four distinct model families to analyze the Bias-Variance tradeoff:
 
-The project follows a structured machine learning workflow:
+1.  **Logistic Regression:** Baseline linear model (High Bias).
+2.  **Decision Tree:** Non-linear, unconstrained (High Variance/Overfitting).
+3.  **Random Forest:** Ensemble bagging to reduce variance (Best Performance).
+4.  **XGBoost:** Gradient boosting with `scale_pos_weight` for imbalance.
 
-1. Exploratory data analysis to assess class imbalance and data quality
-2. Explicit handling of data leakage by removing identifiers and post-treatment features
-3. Baseline modeling using logistic regression with class balancing
-4. Recall-focused evaluation using precision–recall curves and threshold analysis
-5. Model comparison to motivate more expressive, non-linear models
+### 3. Handling Imbalance
 
-## Baseline Results
+The dataset has a severe imbalance (~11% positive case rate). We addressed this via:
 
-A logistic regression model was used as an interpretable baseline.
+- **Stratified Splitting:** Ensuring Train/Val/Test sets had equal class distribution.
+- **Class Weighting:** Used `class_weight='balanced'` (Random Forest) and `scale_pos_weight` (XGBoost) to penalize false negatives heavily.
 
-- ROC-AUC: ~0.65
-- Recall (positive class): ~0.54 at default threshold
-- Recall increased to ~0.98 with lower thresholds, at the cost of precision
+## 📈 Model Comparison
 
-These results highlight the tradeoff between recall and precision in imbalanced clinical data and motivate the use of non-linear models.
+| Model                        | Val AUC   | Observations                                                      |
+| :--------------------------- | :-------- | :---------------------------------------------------------------- |
+| **Logistic Regression**      | 0.640     | Good baseline, but fails to capture non-linear interactions.      |
+| **Decision Tree (Unpruned)** | 0.531     | Severe overfitting (Perfect Train score, poor Val score).         |
+| **XGBoost**                  | 0.647     | Strong performance, effectively tied with Random Forest.          |
+| **Random Forest (Tuned)**    | **0.648** | **Selected Champion.** Best balance of stability and performance. |
 
-## Key Takeaways
+## Future Improvements
 
-- Accuracy is misleading for highly imbalanced healthcare data
-- Threshold selection has a significant impact on clinical usefulness
-- Logistic regression provides a strong baseline but struggles to capture complex feature interactions
-- Recall-driven evaluation is essential when false negatives are costly
-
-## Next Steps
-
-- Train and evaluate decision trees and ensemble models
-- Compare bias–variance tradeoffs across model families
-- Perform subgroup analysis to examine model behavior across patient populations
-- Evaluate final model on a held-out test set
+- **Threshold Optimization:** Implement a cost-sensitive threshold (e.g., minimizing financial cost of False Negatives vs. False Positives).
+- **Feature Engineering:** Group ICD-9 diagnosis codes into broader "Comorbidity Indices" (e.g., Charlson Index).
+- **Deep Learning:** Experiment with Neural Networks (MLP), though tabular performance was capped at AUC ~0.63 in initial tests.
 
 ## Tech Stack
 
-- Python
-- Pandas, NumPy
-- Scikit-learn
-- Matplotlib
-- Jupyter Notebook
+- **Python 3.10+**
+- **Scikit-Learn:** Pipelines, GridSearch, Evaluation Metrics.
+- **Pandas & NumPy:** Data manipulation.
+- **Matplotlib:** Visualization (ROC Curves, Confusion Matrices).
+- **XGBoost:** Gradient Boosting implementation.
